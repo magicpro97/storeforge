@@ -85,7 +85,21 @@ export function registerReleaseCommand(program: Command): void {
             spinner.fail(chalk.red('No valid builds available'));
             process.exit(1);
           }
-          await submitForReview(config.apple, appId, validBuild.id);
+
+          // Fetch editable version (not build ID)
+          const { getHeaders: getAppleHeaders } = await import('../../core/apple.js');
+          const headers = getAppleHeaders(config.apple);
+          const versionResponse = await fetch(
+            `https://api.appstoreconnect.apple.com/v1/apps/${appId}/appStoreVersions?filter[appStoreState]=PREPARE_FOR_SUBMISSION&limit=1`,
+            { headers }
+          );
+          const versionData = await versionResponse.json() as any;
+          if (!versionData.data?.length) {
+            spinner.fail(chalk.red('No editable version found in PREPARE_FOR_SUBMISSION state'));
+            process.exit(1);
+          }
+          const versionId = versionData.data[0].id;
+          await submitForReview(config.apple, appId, versionId);
           spinner.succeed(chalk.green('Build submitted for App Store review!'));
         } else {
           console.log(chalk.gray('Cancelled.'));
@@ -133,8 +147,12 @@ export function registerReleaseCommand(program: Command): void {
         if (targetTrack) {
           toTrack = targetTrack;
           const targetIdx = ANDROID_TRACK_ORDER.indexOf(toTrack);
-          if (targetIdx <= 0) {
-            console.error(chalk.red(`Cannot promote to ${toTrack}`));
+          if (targetIdx === -1) {
+            console.error(chalk.red(`Invalid track: ${toTrack}. Valid tracks: ${ANDROID_TRACK_ORDER.join(', ')}`));
+            process.exit(1);
+          }
+          if (targetIdx === 0) {
+            console.error(chalk.red(`Cannot promote to ${toTrack} — it is the lowest track`));
             process.exit(1);
           }
           fromTrack = ANDROID_TRACK_ORDER[targetIdx - 1];
@@ -149,7 +167,7 @@ export function registerReleaseCommand(program: Command): void {
             }
           }
 
-          if (!fromTrack!) {
+          if (!fromTrack) {
             console.error(chalk.red('No track found to promote from'));
             process.exit(1);
             return;

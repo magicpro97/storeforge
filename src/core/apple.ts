@@ -36,7 +36,7 @@ export function generateJWT(config: AppleConfig): string {
   });
 }
 
-function getHeaders(config: AppleConfig): Record<string, string> {
+export function getHeaders(config: AppleConfig): Record<string, string> {
   const token = generateJWT(config);
   return {
     Authorization: `Bearer ${token}`,

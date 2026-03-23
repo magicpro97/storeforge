@@ -27,6 +27,7 @@ export function registerMetadataCommand(program: Command): void {
       const config = loadConfig();
       const raw = readFileSync(yamlPath, 'utf-8');
       const metadataFile = parse(raw) as MetadataFile;
+      let hasFailures = false;
 
       // Sync iOS metadata
       if (metadataFile.ios && isAppleConfigured(config)) {
@@ -48,6 +49,7 @@ export function registerMetadataCommand(program: Command): void {
         } catch (error) {
           spinner.fail(chalk.red('Failed to sync iOS metadata'));
           console.error(chalk.red(error instanceof Error ? error.message : String(error)));
+          hasFailures = true;
         }
       } else if (metadataFile.ios) {
         console.log(chalk.yellow('⚠ App Store Connect not configured, skipping iOS'));
@@ -69,11 +71,16 @@ export function registerMetadataCommand(program: Command): void {
         } catch (error) {
           spinner.fail(chalk.red('Failed to sync Android metadata'));
           console.error(chalk.red(error instanceof Error ? error.message : String(error)));
+          hasFailures = true;
         }
       } else if (metadataFile.android) {
         console.log(chalk.yellow('⚠ Google Play not configured, skipping Android'));
       }
 
+      if (hasFailures) {
+        console.log(chalk.yellow('\n⚠ Metadata sync completed with errors'));
+        process.exit(1);
+      }
       console.log(chalk.green('\n✓ Metadata sync complete'));
     });
 

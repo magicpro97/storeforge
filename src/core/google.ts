@@ -109,6 +109,11 @@ export async function uploadAAB(
   aabPath: string,
   track: string = 'internal',
 ): Promise<UploadResult> {
+  const validTracks = ['internal', 'alpha', 'beta', 'production'];
+  if (!validTracks.includes(track)) {
+    throw new Error(`Invalid track: ${track}. Valid tracks: ${validTracks.join(', ')}`);
+  }
+
   if (!existsSync(aabPath)) {
     throw new Error(`AAB file not found: ${aabPath}`);
   }
@@ -194,6 +199,15 @@ export async function getTracks(config: GoogleConfig): Promise<GoogleTrack[]> {
   }
 
   const data = await response.json() as { tracks: GoogleTrack[] };
+
+  // Clean up the edit since we only needed to read
+  try {
+    await fetch(
+      `${PLAY_API_BASE}/applications/${config.packageName}/edits/${editId}`,
+      { method: 'DELETE', headers }
+    );
+  } catch { /* ignore cleanup errors */ }
+
   return data.tracks || [];
 }
 
@@ -293,6 +307,14 @@ export async function getStoreListing(
     fullDescription: string;
     language: string;
   };
+
+  // Clean up the edit since we only needed to read
+  try {
+    await fetch(
+      `${PLAY_API_BASE}/applications/${config.packageName}/edits/${editId}`,
+      { method: 'DELETE', headers }
+    );
+  } catch { /* ignore cleanup errors */ }
 
   return {
     title: data.title,
