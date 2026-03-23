@@ -5,10 +5,11 @@
   "targets": {
     "linh-s-blog": {
       "hosting": {
-        "storeforge": [
-          "storeforge"
+        "storeforge-landing": [
+          "storeforge-landing"
         ]
       }
     }
-  }
+  },
+  "etags": {}
 }

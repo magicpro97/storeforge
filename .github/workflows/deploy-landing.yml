@@ -1,0 +1,33 @@
+name: Deploy Landing Page
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'landing/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Firebase Tools
+        run: npm install -g firebase-tools
+
+      - name: Apply hosting target
+        run: firebase target:apply hosting storeforge-landing storeforge-landing --project linh-s-blog
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+
+      - name: Deploy to Firebase Hosting
+        run: firebase deploy --only hosting:storeforge-landing --project linh-s-blog
+        working-directory: ./landing
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
