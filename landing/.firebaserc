@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "linh-s-blog"
+  },
+  "targets": {
+    "linh-s-blog": {
+      "hosting": {
+        "storeforge": [
+          "storeforge"
+        ]
+      }
+    }
+  }
+}

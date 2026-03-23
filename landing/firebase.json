@@ -1,0 +1,7 @@
+{
+  "hosting": {
+    "target": "storeforge",
+    "public": "public",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+  }
+}
