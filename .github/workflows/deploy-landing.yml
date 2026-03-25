@@ -23,6 +23,7 @@ jobs:
 
       - name: Apply hosting target
         run: firebase target:apply hosting storeforge-landing storeforge-landing --project linh-s-blog
+        working-directory: ./landing
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
 
