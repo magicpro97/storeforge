@@ -8,6 +8,7 @@ import { registerMetadataCommand } from './cli/commands/metadata.js';
 import { registerStatusCommand } from './cli/commands/status.js';
 import { registerReleaseCommand } from './cli/commands/release.js';
 import { registerConfigCommand } from './cli/commands/config.js';
+import { registerPreflightCommand } from './cli/commands/preflight.js';
 
 const program = new Command();
 
@@ -23,6 +24,7 @@ registerMetadataCommand(program);
 registerStatusCommand(program);
 registerReleaseCommand(program);
 registerConfigCommand(program);
+registerPreflightCommand(program);
 
 // Custom help footer
 program.addHelpText('after', `
@@ -44,6 +46,13 @@ ${chalk.bold('Examples:')}
   ${chalk.gray('# Release to production')}
   $ storeforge release ios
   $ storeforge release android production
+  $ storeforge release android production --phased
+  $ storeforge release android production --fraction 0.05
+  $ storeforge release android production --notes-from-git
+
+  ${chalk.gray('# Pre-release checklist')}
+  $ storeforge preflight
+  $ storeforge preflight --metadata ./metadata.yml --screenshots ./assets/
 
   ${chalk.gray('# Manage configuration')}
   $ storeforge config list

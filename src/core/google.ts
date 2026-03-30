@@ -230,10 +230,16 @@ export async function getReviewStatus(config: GoogleConfig): Promise<ReviewStatu
   };
 }
 
+export interface PromoteOptions {
+  userFraction?: number;
+  releaseNotes?: { language: string; text: string }[];
+}
+
 export async function promoteTrack(
   config: GoogleConfig,
   fromTrack: string,
   toTrack: string,
+  options?: PromoteOptions,
 ): Promise<void> {
   const accessToken = await getAccessToken(config);
   const editId = await createEdit(config);
@@ -257,6 +263,16 @@ export async function promoteTrack(
 
   const latestRelease = sourceData.releases[0]!;
 
+  const release: Record<string, unknown> = {
+    versionCodes: latestRelease.versionCodes,
+    status: options?.userFraction != null ? 'inProgress' : 'completed',
+    releaseNotes: options?.releaseNotes ?? latestRelease.releaseNotes,
+  };
+
+  if (options?.userFraction != null) {
+    release.userFraction = options.userFraction;
+  }
+
   // Set target track
   const targetResponse = await fetch(
     `${PLAY_API_BASE}/applications/${config.packageName}/edits/${editId}/tracks/${toTrack}`,
@@ -265,13 +281,7 @@ export async function promoteTrack(
       headers,
       body: JSON.stringify({
         track: toTrack,
-        releases: [
-          {
-            versionCodes: latestRelease.versionCodes,
-            status: 'completed',
-            releaseNotes: latestRelease.releaseNotes,
-          },
-        ],
+        releases: [release],
       }),
     },
   );

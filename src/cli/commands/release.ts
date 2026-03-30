@@ -2,11 +2,80 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import inquirer from 'inquirer';
+import { execSync } from 'child_process';
 import { loadConfig, isAppleConfigured, isGoogleConfigured } from '../../core/config.js';
 import { submitForReview, listApps, listBuilds } from '../../core/apple.js';
 import { promoteTrack, getTracks } from '../../core/google.js';
+import type { PromoteOptions } from '../../core/google.js';
 
 const ANDROID_TRACK_ORDER = ['internal', 'alpha', 'beta', 'production'];
+
+function formatCommitAsReleaseNote(commit: string): string | null {
+  const trimmed = commit.replace(/^[a-f0-9]+\s+/, '').trim();
+
+  if (/^Merge /i.test(trimmed)) return null;
+
+  const conventionalMatch = trimmed.match(/^(\w+)(?:\(.+?\))?!?:\s*(.+)$/);
+  if (!conventionalMatch) {
+    return `• ${capitalize(trimmed)}`;
+  }
+
+  const type = conventionalMatch[1]!.toLowerCase();
+  const message = conventionalMatch[2]!.trim();
+
+  switch (type) {
+    case 'feat':
+      return `✨ New: You can now ${lowerFirst(message)}`;
+    case 'fix':
+      return `🐛 Fixed: ${capitalize(message)} resolved`;
+    case 'perf':
+      return `⚡ Improved: ${capitalize(message)}`;
+    case 'refactor':
+      return `♻️ Improved: ${capitalize(message)}`;
+    case 'style':
+      return `🎨 Improved: ${capitalize(message)}`;
+    case 'chore':
+    case 'ci':
+    case 'test':
+    case 'docs':
+    case 'build':
+      return null;
+    default:
+      return `• ${capitalize(message)}`;
+  }
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function lowerFirst(s: string): string {
+  return s.charAt(0).toLowerCase() + s.slice(1);
+}
+
+function generateReleaseNotes(): string[] {
+  let gitLog: string;
+  try {
+    // Try from last tag to HEAD
+    const lastTag = execSync('git describe --tags --abbrev=0 2>/dev/null', { encoding: 'utf-8' }).trim();
+    gitLog = execSync(`git log --oneline ${lastTag}..HEAD`, { encoding: 'utf-8' }).trim();
+  } catch {
+    // No tags — use last 20 commits
+    gitLog = execSync('git log --oneline -20', { encoding: 'utf-8' }).trim();
+  }
+
+  if (!gitLog) return [];
+
+  const lines = gitLog.split('\n').filter(Boolean);
+  const notes: string[] = [];
+
+  for (const line of lines) {
+    const note = formatCommitAsReleaseNote(line);
+    if (note) notes.push(note);
+  }
+
+  return notes;
+}
 
 export function registerReleaseCommand(program: Command): void {
   const release = program
@@ -17,7 +86,8 @@ export function registerReleaseCommand(program: Command): void {
     .command('ios')
     .description('Submit for App Store review / promote to production')
     .option('--app-id <id>', 'App Store Connect app ID')
-    .action(async (options: { appId?: string }) => {
+    .option('--notes-from-git', 'Auto-generate release notes from git history')
+    .action(async (options: { appId?: string; notesFromGit?: boolean }) => {
       const config = loadConfig();
 
       if (!isAppleConfigured(config)) {
@@ -114,7 +184,10 @@ export function registerReleaseCommand(program: Command): void {
   release
     .command('android [targetTrack]')
     .description('Promote Android build (internal→alpha→beta→production)')
-    .action(async (targetTrack?: string) => {
+    .option('--phased', 'Use phased rollout (1% → 5% → 20% → 50% → 100%)')
+    .option('--fraction <percent>', 'Set custom user fraction (0.01 to 1.0)', parseFloat)
+    .option('--notes-from-git', 'Auto-generate release notes from git history')
+    .action(async (targetTrack: string | undefined, options: { phased?: boolean; fraction?: number; notesFromGit?: boolean }) => {
       const config = loadConfig();
 
       if (!isGoogleConfigured(config)) {
@@ -176,19 +249,79 @@ export function registerReleaseCommand(program: Command): void {
           toTrack = ANDROID_TRACK_ORDER[ANDROID_TRACK_ORDER.indexOf(fromTrack) + 1]!;
         }
 
+        // Validate fraction option
+        if (options.fraction != null) {
+          if (options.fraction < 0.01 || options.fraction > 1.0) {
+            console.error(chalk.red('--fraction must be between 0.01 and 1.0'));
+            process.exit(1);
+          }
+        }
+
+        // Determine user fraction
+        const userFraction = options.fraction ?? (options.phased ? 0.01 : undefined);
+
+        // Generate release notes from git if requested
+        let releaseNotes: { language: string; text: string }[] | undefined;
+        if (options.notesFromGit) {
+          console.log(chalk.bold.cyan('\n📝 Generating release notes from git history...\n'));
+          const notes = generateReleaseNotes();
+          if (notes.length === 0) {
+            console.log(chalk.yellow('No commits found to generate notes from.'));
+          } else {
+            const notesText = notes.join('\n');
+            console.log(chalk.white(notesText));
+            console.log();
+
+            const { useNotes } = await inquirer.prompt<{ useNotes: boolean }>([
+              {
+                type: 'confirm',
+                name: 'useNotes',
+                message: 'Use these release notes?',
+                default: true,
+              },
+            ]);
+
+            if (useNotes) {
+              releaseNotes = [{ language: 'en-US', text: notesText }];
+            }
+          }
+        }
+
+        const fractionLabel = userFraction != null ? ` (${Math.round(userFraction * 100)}% rollout)` : '';
         const { confirm } = await inquirer.prompt<{ confirm: boolean }>([
           {
             type: 'confirm',
             name: 'confirm',
-            message: `Promote from ${chalk.cyan(fromTrack!)} → ${chalk.green(toTrack)}?`,
+            message: `Promote from ${chalk.cyan(fromTrack!)} → ${chalk.green(toTrack)}${fractionLabel}?`,
             default: false,
           },
         ]);
 
         if (confirm) {
+          const promoteOptions: PromoteOptions = {};
+          if (userFraction != null) {
+            promoteOptions.userFraction = userFraction;
+          }
+          if (releaseNotes) {
+            promoteOptions.releaseNotes = releaseNotes;
+          }
+
           spinner.start(`Promoting ${fromTrack} → ${toTrack}...`);
-          await promoteTrack(config.google, fromTrack!, toTrack);
+          await promoteTrack(config.google, fromTrack!, toTrack, promoteOptions);
           spinner.succeed(chalk.green(`Build promoted to ${toTrack}!`));
+
+          if (options.phased) {
+            console.log(chalk.bold.cyan('\n📊 Phased Rollout Plan:'));
+            console.log(`  Stage 1: 1% of users ${chalk.green('(current)')}`);
+            console.log(`  Stage 2: 5% (promote with: ${chalk.gray(`storeforge release android ${toTrack} --fraction 0.05`)})`);
+            console.log('  Stage 3: 20%');
+            console.log('  Stage 4: 50%');
+            console.log('  Stage 5: 100% (full release)');
+            console.log(chalk.yellow('\n💡 Monitor crash rate between stages with: monforge status'));
+          } else if (userFraction != null && userFraction < 1.0) {
+            console.log(chalk.cyan(`\n📊 Rolling out to ${Math.round(userFraction * 100)}% of users`));
+            console.log(chalk.yellow('💡 Monitor crash rate with: monforge status'));
+          }
         } else {
           console.log(chalk.gray('Cancelled.'));
         }
